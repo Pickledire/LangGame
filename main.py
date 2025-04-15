@@ -2559,18 +2559,21 @@ class Game:
         # Get all objects in the currently active chunks
         game_objects = self.world.get_objects_in_active_chunks()
         
-        # Draw game objects first (background layer)
-        background_objects = [obj for obj in game_objects if obj.obj_type["layer"] == "background"]
-        for obj in background_objects:
-            obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
-        
-        # Draw foreground objects
-        foreground_objects = [obj for obj in game_objects if obj.obj_type["layer"] == "foreground"]
-        for obj in foreground_objects:
-            obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
+        # First draw objects without layer information or with background layer
+        for obj in game_objects:
+            # Check if the object type has a layer key
+            layer = obj.obj_type.get("layer", "background")  # Default to background if no layer specified
+            if layer == "background":
+                obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
         
         # Draw player
         self.player.draw(self.screen, self.camera_x, self.camera_y)
+        
+        # Then draw foreground objects on top
+        for obj in game_objects:
+            layer = obj.obj_type.get("layer", "background")
+            if layer == "foreground":
+                obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
         
         # Draw interaction range indicator (for debugging or UI feedback)
         player_screen_x = self.player.x + self.player.width // 2 - self.camera_x
