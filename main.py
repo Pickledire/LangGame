@@ -315,54 +315,59 @@ class Player:
         self.y = y
         self.width = TILE_SIZE
         self.height = TILE_SIZE
-        self.normal_speed = 3  # Reduced from 5 for better control
-        self.sprint_speed = 8  # Fast movement when sprinting
-        self.speed = self.normal_speed
-        self.color = (255, 0, 0)  # Red
-        self.score = 0
-        self.words_learned = defaultdict(dict)  # Track learned words by language
-        self.direction = DIRECTION_DOWN  # Default direction is down
-        # World position in tiles
-        self.tile_x = x // TILE_SIZE
-        self.tile_y = y // TILE_SIZE
-        # Chunk position
-        self.chunk_x = self.tile_x // CHUNK_SIZE
-        self.chunk_y = self.tile_y // CHUNK_SIZE
-        # Clothing colors
-        self.shirt_color = (50, 100, 200)  # Blue shirt
-        self.pants_color = (30, 30, 100)   # Dark blue pants
-        self.skin_color = (255, 213, 170)  # Light skin tone
-        # Animation state
-        self.animation_frame = 0
+        self.speed = 5
+        self.direction = DIRECTION_DOWN
+        self.chunk_x = x // (CHUNK_SIZE * TILE_SIZE)
+        self.chunk_y = y // (CHUNK_SIZE * TILE_SIZE)
+        
+        # Animation frames
         self.is_moving = False
-        self.animation_speed = 8  # Frames before animation changes
-        self.animation_counter = 0
+        self.animation_frame = 0
+        self.animation_cooldown = 5  # Update animation every 5 frames
+        self.animation_timer = 0
+        
+        # Character appearance
+        self.skin_color = (240, 200, 160)  # Light skin tone
+        self.shirt_color = (70, 130, 180)  # Steel blue shirt
+        self.pants_color = (70, 70, 90)     # Dark pants
+        
+        # Vocabulary tracking
+        self.words_learned = {
+            "spanish": {},
+            "french": {}
+        }
+        
         # Interaction indicator
         self.interaction_target = None
         # Camera offset for mouse interaction
         self.camera_offset_x = 0
         self.camera_offset_y = 0
-
+        # Maximum distance in pixels for interaction
+        self.interaction_range = 150
+        
+        # Scoring
+        self.score = 0
+    
     def move(self, dx, dy, world, is_sprinting=False):
         # Apply sprint speed if shift is pressed
         if is_sprinting:
-            self.speed = self.sprint_speed
+            self.speed = 8  # Fast movement when sprinting
         else:
-            self.speed = self.normal_speed
+            self.speed = 5  # Normal speed
             
         # Track if moving for animation
         self.is_moving = (dx != 0 or dy != 0)
         
         # Update animation counter if moving
         if self.is_moving:
-            self.animation_counter += 1
-            if self.animation_counter >= self.animation_speed:
-                self.animation_counter = 0
+            self.animation_timer += 1
+            if self.animation_timer >= self.animation_cooldown:
+                self.animation_timer = 0
                 self.animation_frame = (self.animation_frame + 1) % 4
         else:
             # Reset animation when standing still
             self.animation_frame = 0
-            self.animation_counter = 0
+            self.animation_timer = 0
             
         # Update player direction based on movement
         if dx > 0:
@@ -392,10 +397,8 @@ class Player:
             self.y = new_y
             
             # Update tile and chunk position
-            self.tile_x = new_tile_x
-            self.tile_y = new_tile_y
-            self.chunk_x = self.tile_x // CHUNK_SIZE
-            self.chunk_y = self.tile_y // CHUNK_SIZE
+            self.chunk_x = new_tile_x // CHUNK_SIZE
+            self.chunk_y = new_tile_y // CHUNK_SIZE
             
         # Update the interaction target
         self.update_interaction_target(world)
@@ -404,9 +407,6 @@ class Player:
         """Update the object the player is currently facing/would interact with"""
         facing_x, facing_y = self.get_facing_tile_position()
         self.interaction_target = world.get_object_at_tile(facing_x, facing_y)
-        
-        # Add a range attribute to track the maximum interaction distance
-        self.interaction_range = 150  # Maximum distance in pixels for interaction
     
     def draw(self, screen, offset_x, offset_y):
         # Calculate the screen position
@@ -2046,43 +2046,45 @@ class World:
 class Game:
     def __init__(self):
         # Set up display based on window mode
-        self.setup_display()
+        pygame.init()
         pygame.display.set_caption("Language Learning Game")
-        self.clock = pygame.time.Clock()
         
-        # Performance optimization variables
-        self.frame_count = 0
-        self.last_fps = 0
-        self.show_fps = True  # Show FPS counter for performance monitoring
+        # Set up the display
+        self.setup_display()
+        
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont('Arial', 16)
+        self.large_font = pygame.font.SysFont('Arial', 24)
         
         # Game state
-        self.target_language = "spanish"  # Default language to learn
         self.running = True
         self.show_menu = False
         self.show_vocabulary = False
-        self.show_settings = False  # New flag for settings menu
-        self.show_word_display = False
-        self.word_display_timer = 0
-        self.current_word_data = None
-        self.word_display_showing_translation = False  # Track if showing translation
-        self.font = pygame.font.SysFont('Arial', 16)
-        self.large_font = pygame.font.SysFont('Arial', 32)
+        self.show_settings = False
         
-        # Camera/viewport
-        self.camera_x = 0
-        self.camera_y = 0
-        
-        # Create the infinite world
+        # Create a world
         self.world = World()
         
-        # Load saved progress if it exists
+        # Create a player in the middle of the world
+        player_x = TILE_SIZE * 5
+        player_y = TILE_SIZE * 5
+        self.player = Player(player_x, player_y)
+        
+        # Camera position
+        self.camera_x = self.player.x - self.screen_width // 2
+        self.camera_y = self.player.y - self.screen_height // 2
+        
+        # Learning settings
+        self.target_language = "spanish"  # Default language
+        
+        # Display for revealed word information
+        self.show_word_display = False
+        self.word_display_timer = 0
+        self.word_display_showing_translation = False
+        self.current_word_data = None
+        
+        # Try to load existing progress
         self.load_progress()
-        
-        # Create player
-        self.player = Player(0, 0) if not hasattr(self, 'player') else self.player
-        
-        # Update active chunks around player
-        self.world.update_active_chunks(self.player.chunk_x, self.player.chunk_y)
     
     def setup_display(self):
         """Set up the display based on the current window mode"""
@@ -2265,7 +2267,7 @@ class Game:
         distance = math.sqrt((world_mouse_x - player_center_x)**2 + (world_mouse_y - player_center_y)**2)
         
         # Check if click is within interaction range
-        if distance <= self.player.interaction_range:
+        if hasattr(self.player, 'interaction_range') and distance <= self.player.interaction_range:
             # Convert world position to tile coordinates
             tile_x = world_mouse_x // TILE_SIZE
             tile_y = world_mouse_y // TILE_SIZE
@@ -2549,8 +2551,8 @@ class Game:
     
     def draw(self):
         """Draw the game world"""
-        # Clear the screen
-        self.screen.fill(BLACK)
+        # Clear the screen with green for the grassy background
+        self.screen.fill(GREEN)
         
         # Adjust screen size based on window mode
         screen_w = self.screen_width
@@ -2575,20 +2577,17 @@ class Game:
             if layer == "foreground":
                 obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
         
-        # Draw interaction range indicator (for debugging or UI feedback)
+        # Get mouse position and distance from player for cursor change
         player_screen_x = self.player.x + self.player.width // 2 - self.camera_x
         player_screen_y = self.player.y + self.player.height // 2 - self.camera_y
-        
-        # Get mouse position to draw a line to cursor when in range
         mouse_x, mouse_y = pygame.mouse.get_pos()
         distance = math.sqrt((mouse_x - player_screen_x)**2 + (mouse_y - player_screen_y)**2)
         
-        # Draw line from player to mouse cursor if in range
-        if distance <= self.player.interaction_range:
-            # Draw a line with a slight glow effect
-            pygame.draw.line(self.screen, (180, 180, 255, 150), 
-                           (player_screen_x, player_screen_y), 
-                           (mouse_x, mouse_y), 2)
+        # Change cursor if within interaction range
+        if hasattr(self.player, 'interaction_range') and distance <= self.player.interaction_range:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+        else:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
         
         # Draw compass in top left
         self.draw_compass()
@@ -2605,20 +2604,6 @@ class Game:
                 self.draw_settings_menu()
             else:
                 self.draw_menu()
-        
-        # Update and display FPS counter (every 10 frames to avoid performance hit)
-        self.frame_count += 1
-        if self.frame_count >= 10:
-            self.last_fps = int(self.clock.get_fps())
-            self.frame_count = 0
-            
-        if self.show_fps:
-            fps_text = self.font.render(f"FPS: {self.last_fps}", True, WHITE)
-            fps_rect = fps_text.get_rect(topright=(screen_w - 10, 10))
-            # Add background to make text more readable
-            pygame.draw.rect(self.screen, (0, 0, 0, 128), 
-                           (fps_rect.x - 5, fps_rect.y - 2, fps_rect.width + 10, fps_rect.height + 4))
-            self.screen.blit(fps_text, fps_rect)
         
         pygame.display.flip()
     
@@ -2696,9 +2681,7 @@ class Game:
                               pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE if FULLSCREEN else pygame.DOUBLEBUF,
                               vsync=1)  # Enable vsync
         
-        # Performance monitoring variables
-        frame_time = 0
-        frame_count = 0
+        # Track time for smooth movement
         last_time = pygame.time.get_ticks()
         
         while self.running:
