@@ -339,6 +339,9 @@ class Player:
         self.animation_counter = 0
         # Interaction indicator
         self.interaction_target = None
+        # Camera offset for mouse interaction
+        self.camera_offset_x = 0
+        self.camera_offset_y = 0
 
     def move(self, dx, dy, world, is_sprinting=False):
         # Apply sprint speed if shift is pressed
@@ -401,7 +404,10 @@ class Player:
         """Update the object the player is currently facing/would interact with"""
         facing_x, facing_y = self.get_facing_tile_position()
         self.interaction_target = world.get_object_at_tile(facing_x, facing_y)
-
+        
+        # Add a range attribute to track the maximum interaction distance
+        self.interaction_range = 150  # Maximum distance in pixels for interaction
+    
     def draw(self, screen, offset_x, offset_y):
         # Calculate the screen position
         screen_x = self.x - offset_x
@@ -627,19 +633,34 @@ class Player:
     
     def get_facing_tile_position(self):
         """Get the tile position the player is facing"""
-        tile_x = self.x // TILE_SIZE
-        tile_y = self.y // TILE_SIZE
+        # Get the mouse position relative to the screen
+        mouse_x, mouse_y = pygame.mouse.get_pos()
         
-        # Adjust based on direction
-        if self.direction == DIRECTION_UP:
-            tile_y -= 1
-        elif self.direction == DIRECTION_RIGHT:
-            tile_x += 1
-        elif self.direction == DIRECTION_DOWN:
-            tile_y += 1
-        elif self.direction == DIRECTION_LEFT:
-            tile_x -= 1
-            
+        # Convert screen position to world position
+        # These will be updated in the Game class when drawing
+        world_mouse_x = mouse_x + self.camera_offset_x
+        world_mouse_y = mouse_y + self.camera_offset_y
+        
+        # Calculate direction from player to mouse
+        dx = world_mouse_x - (self.x + self.width // 2)
+        dy = world_mouse_y - (self.y + self.height // 2)
+        
+        # Update player's facing direction based on mouse position
+        if abs(dx) > abs(dy):
+            if dx > 0:
+                self.direction = DIRECTION_RIGHT
+            else:
+                self.direction = DIRECTION_LEFT
+        else:
+            if dy > 0:
+                self.direction = DIRECTION_DOWN
+            else:
+                self.direction = DIRECTION_UP
+        
+        # Convert world mouse position to tile position
+        tile_x = world_mouse_x // TILE_SIZE
+        tile_y = world_mouse_y // TILE_SIZE
+        
         return (tile_x, tile_y)
 
 class GameObject:
@@ -2144,62 +2165,67 @@ class Game:
             pass
     
     def handle_events(self):
+        """Handle player input events"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.save_progress()
                 self.running = False
             
             # Handle key presses
-            if event.type == pygame.KEYDOWN:
+            elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    # Toggle menu instead of quitting directly
+                    # Toggle menu
                     self.show_menu = not self.show_menu
-                    if not self.show_menu:
-                        self.show_vocabulary = False
-                        self.show_settings = False
-                elif event.key == pygame.K_1 and (self.show_menu or self.show_vocabulary):
-                    self.target_language = "spanish"
-                elif event.key == pygame.K_2 and (self.show_menu or self.show_vocabulary):
-                    self.target_language = "french"
-                elif event.key == pygame.K_v and self.show_menu:
-                    # Toggle vocabulary list
-                    self.show_vocabulary = not self.show_vocabulary
-                    self.show_settings = False
-                elif event.key == pygame.K_o and self.show_menu:
-                    # Toggle settings menu
-                    self.show_settings = not self.show_settings
-                    self.show_vocabulary = False
-                elif event.key == pygame.K_s and self.show_menu:
-                    # Save progress
-                    self.save_progress()
-                    print("Game progress saved!")
-                elif event.key == pygame.K_q and self.show_menu:
-                    # Quit the game
-                    self.save_progress()
-                    self.running = False
-                elif event.key == pygame.K_f and self.show_menu and not self.show_settings:
-                    # Toggle between windowed and fullscreen when not in settings
-                    if CURRENT_WINDOW_MODE != WINDOW_MODE_FULLSCREEN:
-                        self.change_window_mode(WINDOW_MODE_FULLSCREEN)
-                    else:
-                        self.change_window_mode(WINDOW_MODE_WINDOWED)
-                elif event.key == pygame.K_SPACE and not self.show_menu:
-                    # Interact with objects in the direction the player is facing
-                    self.interact_with_facing_object()
-                elif event.key == pygame.K_t and self.show_word_display:
-                    # Toggle the word display language directly using T key
-                    self.word_display_showing_translation = not self.word_display_showing_translation
-                    # Reset timer on manual toggle
-                    self.word_display_timer = 180
                     
-                # Handle settings menu key presses
-                if self.show_settings:
-                    if event.key == pygame.K_1:  # Windowed mode
-                        self.change_window_mode(WINDOW_MODE_WINDOWED)
-                    elif event.key == pygame.K_2:  # Fullscreen mode
-                        self.change_window_mode(WINDOW_MODE_FULLSCREEN)
-                    elif event.key == pygame.K_3:  # Borderless mode
-                        self.change_window_mode(WINDOW_MODE_BORDERLESS)
+                # Menu mode keys
+                elif self.show_menu:
+                    if event.key == pygame.K_v and not self.show_settings:
+                        # Toggle vocabulary list
+                        self.show_vocabulary = not self.show_vocabulary
+                        self.show_settings = False
+                    elif event.key == pygame.K_1 and not self.show_settings:
+                        # Switch to Spanish
+                        self.target_language = "spanish"
+                    elif event.key == pygame.K_2 and not self.show_settings:
+                        # Switch to French
+                        self.target_language = "french"
+                    elif event.key == pygame.K_o and not self.show_vocabulary:
+                        # Show settings menu
+                        self.show_settings = not self.show_settings
+                        self.show_vocabulary = False
+                    elif event.key == pygame.K_s and self.show_menu:
+                        # Save progress
+                        self.save_progress()
+                        print("Game progress saved!")
+                    elif event.key == pygame.K_q and self.show_menu:
+                        # Quit the game
+                        self.save_progress()
+                        self.running = False
+                    elif event.key == pygame.K_f and self.show_menu and not self.show_settings:
+                        # Toggle between windowed and fullscreen when not in settings
+                        if CURRENT_WINDOW_MODE != WINDOW_MODE_FULLSCREEN:
+                            self.change_window_mode(WINDOW_MODE_FULLSCREEN)
+                        else:
+                            self.change_window_mode(WINDOW_MODE_WINDOWED)
+                    elif event.key == pygame.K_t and self.show_word_display:
+                        # Toggle the word display language directly using T key
+                        self.word_display_showing_translation = not self.word_display_showing_translation
+                        # Reset timer on manual toggle
+                        self.word_display_timer = 180
+                        
+                    # Handle settings menu key presses
+                    if self.show_settings:
+                        if event.key == pygame.K_1:  # Windowed mode
+                            self.change_window_mode(WINDOW_MODE_WINDOWED)
+                        elif event.key == pygame.K_2:  # Fullscreen mode
+                            self.change_window_mode(WINDOW_MODE_FULLSCREEN)
+                        elif event.key == pygame.K_3:  # Borderless mode
+                            self.change_window_mode(WINDOW_MODE_BORDERLESS)
+            
+            # Handle mouse click for interaction
+            elif event.type == pygame.MOUSEBUTTONDOWN and not self.show_menu:
+                if event.button == 1:  # Left mouse button
+                    self.handle_mouse_interaction()
         
         # Only process movement when not in menu
         if not self.show_menu:
@@ -2220,34 +2246,52 @@ class Game:
             
             if dx != 0 or dy != 0:
                 self.player.move(dx, dy, self.world, is_sprinting)
+                
+        # Update player's facing direction based on mouse position (continuous update)
+        self.player.get_facing_tile_position()
     
-    def interact_with_facing_object(self):
-        """Interact with the object the player is facing"""
-        # Get the tile position the player is facing
-        facing_x, facing_y = self.player.get_facing_tile_position()
+    def handle_mouse_interaction(self):
+        """Handle interaction via mouse click"""
+        # Get mouse position
+        mouse_x, mouse_y = pygame.mouse.get_pos()
         
-        # Find the object at this position
-        obj = self.world.get_object_at_tile(facing_x, facing_y)
+        # Convert to world coordinates
+        world_mouse_x = mouse_x + self.camera_x
+        world_mouse_y = mouse_y + self.camera_y
         
-        if obj:
-            if obj.revealed:
-                obj.toggle_translation()
-                # Get word data for display
-                word_key = obj.obj_type["name"]
-                if word_key in self.player.words_learned[self.target_language]:
-                    self.current_word_data = self.player.words_learned[self.target_language][word_key]
+        # Calculate distance from player to mouse click
+        player_center_x = self.player.x + self.player.width // 2
+        player_center_y = self.player.y + self.player.height // 2
+        distance = math.sqrt((world_mouse_x - player_center_x)**2 + (world_mouse_y - player_center_y)**2)
+        
+        # Check if click is within interaction range
+        if distance <= self.player.interaction_range:
+            # Convert world position to tile coordinates
+            tile_x = world_mouse_x // TILE_SIZE
+            tile_y = world_mouse_y // TILE_SIZE
+            
+            # Find the object at this position
+            obj = self.world.get_object_at_tile(tile_x, tile_y)
+            
+            if obj:
+                if obj.revealed:
+                    obj.toggle_translation()
+                    # Get word data for display
+                    word_key = obj.obj_type["name"]
+                    if word_key in self.player.words_learned[self.target_language]:
+                        self.current_word_data = self.player.words_learned[self.target_language][word_key]
+                        self.show_word_display = True
+                        self.word_display_timer = 180  # Show for 3 seconds (60 FPS * 3)
+                        # Toggle the display language
+                        self.word_display_showing_translation = obj.translation_shown
+                else:
+                    obj.revealed = True
+                    # Add to learned words when revealing a new object
+                    word_data = self.player.learn_word(obj.obj_type, self.target_language)
+                    self.current_word_data = word_data
                     self.show_word_display = True
-                    self.word_display_timer = 180  # Show for 3 seconds (60 FPS * 3)
-                    # Toggle the display language
-                    self.word_display_showing_translation = obj.translation_shown
-            else:
-                obj.revealed = True
-                # Add to learned words when revealing a new object
-                word_data = self.player.learn_word(obj.obj_type, self.target_language)
-                self.current_word_data = word_data
-                self.show_word_display = True
-                self.word_display_timer = 432  # Show for 3 seconds (144 FPS * 3)
-                self.word_display_showing_translation = False  # Start with target language
+                    self.word_display_timer = 432  # Show for 3 seconds (144 FPS * 3)
+                    self.word_display_showing_translation = False  # Start with target language
     
     def draw_menu(self):
         """Draw the game menu"""
@@ -2484,66 +2528,64 @@ class Game:
     
     def update(self):
         """Update game state"""
-        # Update camera position to follow player
+        # Set camera to follow player
         self.camera_x = self.player.x - self.screen_width // 2
         self.camera_y = self.player.y - self.screen_height // 2
         
-        # Update active chunks when player changes chunks
-        self.world.update_active_chunks(self.player.chunk_x, self.player.chunk_y)
+        # Update player's camera offset (needed for mouse position calculations)
+        self.player.camera_offset_x = self.camera_x
+        self.player.camera_offset_y = self.camera_y
         
-        # Update word display timer
+        # Update active chunks based on player position
+        player_chunk_x = self.player.x // (CHUNK_SIZE * TILE_SIZE)
+        player_chunk_y = self.player.y // (CHUNK_SIZE * TILE_SIZE)
+        self.world.update_active_chunks(player_chunk_x, player_chunk_y)
+        
+        # Word display timer
         if self.show_word_display and self.word_display_timer > 0:
             self.word_display_timer -= 1
             if self.word_display_timer <= 0:
                 self.show_word_display = False
     
     def draw(self):
-        """Draw the game"""
-        self.screen.fill(GREEN)  # Use GREEN as the default background for grassy world
+        """Draw the game world"""
+        # Clear the screen
+        self.screen.fill(BLACK)
         
-        # Get screen dimensions
-        screen_w = FULLSCREEN_WIDTH if FULLSCREEN else SCREEN_WIDTH
-        screen_h = FULLSCREEN_HEIGHT if FULLSCREEN else SCREEN_HEIGHT
+        # Adjust screen size based on window mode
+        screen_w = self.screen_width
+        screen_h = self.screen_height
         
-        # Calculate visible tile range (only draw objects within screen area plus a small margin)
-        margin = 2 * TILE_SIZE  # Extra margin to prevent popping
-        min_tile_x = (self.camera_x - margin) // TILE_SIZE
-        max_tile_x = (self.camera_x + screen_w + margin) // TILE_SIZE
-        min_tile_y = (self.camera_y - margin) // TILE_SIZE
-        max_tile_y = (self.camera_y + screen_h + margin) // TILE_SIZE
-        
-        # Get all objects in active chunks
+        # Get all objects in the currently active chunks
         game_objects = self.world.get_objects_in_active_chunks()
         
-        # Draw only visible game objects (culling optimization)
-        visible_count = 0  # For debugging
-        for obj in game_objects:
-            obj_tile_x, obj_tile_y = obj.get_tile_position()
-            
-            # Skip objects outside visible range (culling)
-            if (obj_tile_x < min_tile_x or obj_tile_x > max_tile_x or
-                obj_tile_y < min_tile_y or obj_tile_y > max_tile_y):
-                continue
-                
+        # Draw game objects first (background layer)
+        background_objects = [obj for obj in game_objects if obj.obj_type["layer"] == "background"]
+        for obj in background_objects:
             obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
-            visible_count += 1
         
-        # Draw interaction indicator if there's a target
-        if self.player.interaction_target:
-            target = self.player.interaction_target
-            target_screen_x = target.x - self.camera_x + target.width // 2
-            target_screen_y = target.y - self.camera_y + target.height // 2
-            
-            # Draw a semi-transparent circle around the interaction target
-            indicator_radius = target.width * 0.7
-            indicator_surface = pygame.Surface((indicator_radius * 2, indicator_radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(indicator_surface, (255, 255, 255, 100), 
-                             (indicator_radius, indicator_radius), indicator_radius)
-            self.screen.blit(indicator_surface, 
-                           (target_screen_x - indicator_radius, target_screen_y - indicator_radius))
+        # Draw foreground objects
+        foreground_objects = [obj for obj in game_objects if obj.obj_type["layer"] == "foreground"]
+        for obj in foreground_objects:
+            obj.draw(self.screen, self.camera_x, self.camera_y, self.target_language, self.player.words_learned)
         
         # Draw player
         self.player.draw(self.screen, self.camera_x, self.camera_y)
+        
+        # Draw interaction range indicator (for debugging or UI feedback)
+        player_screen_x = self.player.x + self.player.width // 2 - self.camera_x
+        player_screen_y = self.player.y + self.player.height // 2 - self.camera_y
+        
+        # Get mouse position to draw a line to cursor when in range
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        distance = math.sqrt((mouse_x - player_screen_x)**2 + (mouse_y - player_screen_y)**2)
+        
+        # Draw line from player to mouse cursor if in range
+        if distance <= self.player.interaction_range:
+            # Draw a line with a slight glow effect
+            pygame.draw.line(self.screen, (180, 180, 255, 150), 
+                           (player_screen_x, player_screen_y), 
+                           (mouse_x, mouse_y), 2)
         
         # Draw compass in top left
         self.draw_compass()
